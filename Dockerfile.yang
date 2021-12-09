@@ -1,0 +1,8 @@
+FROM notconf AS notconf-install
+
+COPY tmp /notconf
+
+RUN YANG_MODULES_DIR=/notconf /install-yang-modules.sh
+
+FROM notconf AS notconf
+COPY --from=notconf-install /etc/sysrepo /etc/sysrepo

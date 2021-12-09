@@ -21,10 +21,11 @@ DOCKER_BUILD_CACHE_ARG?=--no-cache
 endif
 endif
 
-
 DOCKER_TAG?=$(PNS)
 
-.PHONY: build test tag-release push-release push test
+export DOCKER_BUILDKIT=1
+
+.PHONY: clone-deps build test tag-release push-release push test
 
 clone-or-update: BRANCH?=devel
 clone-or-update: DIR:=$(basename $(lastword $(subst /, ,$(REPOSITORY))))
@@ -42,7 +43,6 @@ clone-deps:
 	$(MAKE) clone-or-update REPOSITORY=https://github.com/CESNET/libnetconf2.git
 	$(MAKE) clone-or-update REPOSITORY=https://github.com/CESNET/netopeer2.git
 
-build: export DOCKER_BUILDKIT=1
 build:
 # We explicitly build the first 'build-tools-source' stage (where the
 # dependencies are installed and source code is pulled), which allows us to
@@ -119,3 +119,27 @@ wait-healthy:
 	docker ps -f name=$(CNT_PREFIX) | egrep "(unhealthy|health: starting)" | awk '{ print $$(NF) }';\
 	echo -e "\e[0m"; \
 	exit 1
+
+.PHONY: checkout-yang build-yang
+
+checkout-yang:
+	git clone --recurse-submodules -4 git@github.com:yangmodels/yang.git
+
+build-yang: SHELL=/bin/bash
+build-yang: YANG_TAG=foo
+build-yang:
+	@if [ -z "$(YANG_PATH)" ]; then echo "The YANG_PATH variable must be set"; exit 1; fi
+	rm -rf tmp
+	mkdir -p tmp
+	@for fixup in `find fixups -type f -printf "%d %P\n" | sort -n -r | awk '{ print $$2; }'`; do \
+		if [[ "$(YANG_PATH)" =~ ^$$(dirname $${fixup}).* ]]; then \
+			fixups/$$fixup $(YANG_PATH) tmp; \
+		fi \
+	done
+	ls tmp/*.yang || cp $(YANG_PATH) tmp
+	docker build -f Dockerfile.yang -t $(IMAGE_PATH)notconf:$(YANG_TAG) .
+
+test-yang: YANG_TAG=foo
+test-yang:
+	-docker rm -f test-yang-$(PNS)
+	docker run -d --name test-yang-$(PNS) $(IMAGE_PATH)notconf:$(YANG_TAG)
