@@ -63,8 +63,16 @@ push:
 	docker push $(IMAGE_PATH)notconf:$(DOCKER_TAG)
 	docker push $(IMAGE_PATH)notconf:$(DOCKER_TAG)-debug
 
-test: export CNT_PREFIX=test-notconf-$(PNS)
 test:
+	$(MAKE) test-notconf-mount
+	$(MAKE) test-compose-yang
+
+# test-notconf-mount: start a notconf:latest container with the test YANG
+# modules mounted to /yang-modules in the container. All YANG modules and XML
+# init files in the directory are installed into sysrepo automatically at
+# container startup.
+test-notconf-mount: CNT_PREFIX=test-notconf-mount-$(PNS)
+test-notconf-mount:
 	-docker rm -f $(CNT_PREFIX)
 # Usually we would start the notconf container with the desired YANG module
 # (located on host) mounted to /yang-modules (in container). When the test
@@ -120,11 +128,16 @@ wait-healthy:
 	echo -e "\e[0m"; \
 	exit 1
 
-.PHONY: checkout-yang build-yang test-yang
+.PHONY: clone-yangmodels compose-notconf-yang test-compose-yang test-composed-notconf-yang
 
-checkout-yang:
+# clone-yangmodels: clones and checks out the yangmodels/yang repository
+# including submodules
+clone-yangmodels:
 	git clone --recurse-submodules -4 git@github.com:yangmodels/yang.git
 
+# Set up COMPOSE_IMAGE_* variables by examining the provided YANG_PATH variable.
+# The conditions below knows how to extract the platform and version from the
+# yangmodules/yang paths. If none match, default to just using YANG_PATH.
 EXPLODED_YANG_PATH=$(subst /, ,$(YANG_PATH))
 ifneq (,$(findstring latest_sros, $(YANG_PATH)))
 	COMPOSE_IMAGE_NAME?=sros
@@ -133,11 +146,16 @@ else ifneq (,$(findstring junos, $(YANG_PATH)))
 	WC=$(words $(EXPLODED_YANG_PATH))
 	COMPOSE_IMAGE_NAME?=$(lastword $(EXPLODED_YANG_PATH))
 	COMPOSE_IMAGE_TAG?=$(word $(shell echo $$(( $(WC) - 1 ))), $(EXPLODED_YANG_PATH))
+else
+	COMPOSE_IMAGE_NAME?=$(subst /,_,$(patsubst %/,%,$(YANG_PATH)))
+	COMPOSE_IMAGE_TAG?=latest
 endif
 
-build-yang: SHELL=/bin/bash
-build-yang: COMPOSE_PATH=build/$(COMPOSE_IMAGE_NAME)/$(COMPOSE_IMAGE_TAG)
-build-yang:
+# compose-notconf-yang: build a docker image with notconf:base with the given
+# YANG modules already installed. Provide the path to the modules (and init
+# XMLs) with the YANG_PATH variable.
+compose-notconf-yang: COMPOSE_PATH=build/$(COMPOSE_IMAGE_NAME)/$(COMPOSE_IMAGE_TAG)
+compose-notconf-yang:
 	@if [ -z "$(YANG_PATH)" ]; then echo "The YANG_PATH variable must be set"; exit 1; fi
 	rm -rf $(COMPOSE_PATH)
 	mkdir -p $(COMPOSE_PATH)
@@ -151,14 +169,14 @@ build-yang:
 	@ls $(COMPOSE_PATH)/*.yang > /dev/null 2>&1 || echo "Copying files directly from $(YANG_PATH) without fixups"; find $(YANG_PATH) -maxdepth 1 -type f -exec cp -t $(COMPOSE_PATH) {} +
 	docker build -f Dockerfile.yang -t $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG) --build-arg COMPOSE_PATH=$(COMPOSE_PATH) $(DOCKER_BUILD_CACHE_ARG) .
 
-test-build-yang: export YANG_PATH=test
-test-build-yang: build-yang
-	$(MAKE) test-yang
+test-compose-yang: export YANG_PATH=test
+test-compose-yang: compose-notconf-yang
+	$(MAKE) test-composed-notconf-yang
 
-test-yang: CNT_PREFIX=test-yang-$(COMPOSE_IMAGE_NAME)-$(COMPOSE_IMAGE_TAG)
-test-yang:
-	-docker rm -f $(CNT_PREFIX)-$(PNS)
-	docker run -d --name $(CNT_PREFIX)-$(PNS) $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG)
+test-composed-notconf-yang: CNT_PREFIX=test-yang-$(COMPOSE_IMAGE_NAME)-$(COMPOSE_IMAGE_TAG)-$(PNS)
+test-composed-notconf-yang:
+	-docker rm -f $(CNT_PREFIX)
+	docker run -d --name $(CNT_PREFIX) $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG)
 	$(MAKE) wait-healthy
-	netconf-console2 --host $$(docker inspect $(CNT_PREFIX)-$(PNS) --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}') --port 830 --hello | grep nc:capability
-	docker rm -f $(CNT_PREFIX)-$(PNS)
+	netconf-console2 --host $$(docker inspect $(CNT_PREFIX) --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}') --port 830 --hello | grep nc:capability
+	make test-stop
