@@ -8,5 +8,6 @@ jobs:
     steps:
     - uses: actions/delete-package-versions@v2
       with:
-        package-name: 'notconf'
+        package-name: 'mzagozen/notconf'
         min-versions-to-keep: 2
+        ignore-versions: ^(latest|debug)$
