@@ -133,7 +133,7 @@ wait-healthy:
 # clone-yangmodels: clones and checks out the yangmodels/yang repository
 # including submodules
 clone-yangmodels:
-	git clone --recurse-submodules -4 git@github.com:yangmodels/yang.git
+	git clone --depth 1 --recurse-submodules=vendor --shallow-submodules git@github.com:yangmodels/yang.git
 
 # Set up COMPOSE_IMAGE_* variables by examining the provided YANG_PATH variable.
 # The conditions below knows how to extract the platform and version from the
