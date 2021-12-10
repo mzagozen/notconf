@@ -1,7 +1,5 @@
 name: build-notconf-base
 
-on: [push, pull_request]
-
 jobs:
   build:
 
