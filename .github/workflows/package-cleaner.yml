@@ -1,0 +1,9 @@
+name: package-cleaner
+
+jobs:
+  clean-package:
+    steps:
+    - uses: actions/delete-package-versions@v2
+      with:
+        package-name: 'notconf'
+        min-versions-to-keep: 2
