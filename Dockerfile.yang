@@ -1,6 +1,7 @@
 FROM notconf AS notconf-install
+ARG COMPOSE_PATH
 
-COPY tmp /notconf
+COPY ${COMPOSE_PATH} /notconf
 
 RUN YANG_MODULES_DIR=/notconf /install-yang-modules.sh
 

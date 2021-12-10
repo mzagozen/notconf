@@ -120,26 +120,45 @@ wait-healthy:
 	echo -e "\e[0m"; \
 	exit 1
 
-.PHONY: checkout-yang build-yang
+.PHONY: checkout-yang build-yang test-yang
 
 checkout-yang:
 	git clone --recurse-submodules -4 git@github.com:yangmodels/yang.git
 
+EXPLODED_YANG_PATH=$(subst /, ,$(YANG_PATH))
+ifneq (,$(findstring latest_sros, $(YANG_PATH)))
+	COMPOSE_IMAGE_NAME?=sros
+	COMPOSE_IMAGE_TAG?=$(subst latest_sros_,,$(filter latest_sros%,$(EXPLODED_YANG_PATH)))
+else ifneq (,$(findstring junos, $(YANG_PATH)))
+	WC=$(words $(EXPLODED_YANG_PATH))
+	COMPOSE_IMAGE_NAME?=$(lastword $(EXPLODED_YANG_PATH))
+	COMPOSE_IMAGE_TAG?=$(word $(shell echo $$(( $(WC) - 1 ))), $(EXPLODED_YANG_PATH))
+endif
+
 build-yang: SHELL=/bin/bash
-build-yang: YANG_TAG=foo
+build-yang: COMPOSE_PATH=build/$(COMPOSE_IMAGE_NAME)/$(COMPOSE_IMAGE_TAG)
 build-yang:
 	@if [ -z "$(YANG_PATH)" ]; then echo "The YANG_PATH variable must be set"; exit 1; fi
-	rm -rf tmp
-	mkdir -p tmp
-	@for fixup in `find fixups -type f -printf "%d %P\n" | sort -n -r | awk '{ print $$2; }'`; do \
+	rm -rf $(COMPOSE_PATH)
+	mkdir -p $(COMPOSE_PATH)
+	@set -e; \
+	for fixup in `find fixups -type f -name Makefile -printf "%d %P\n" | sort -n -r | awk '{ print $$2; }'`; do \
 		if [[ "$(YANG_PATH)" =~ ^$$(dirname $${fixup}).* ]]; then \
-			fixups/$$fixup $(YANG_PATH) tmp; \
+			echo "Executing fixups/$${fixup}"; \
+			make -f fixups/$$fixup -j YANG_PATH=$(YANG_PATH) COMPOSE_PATH=$(COMPOSE_PATH); \
 		fi \
 	done
-	ls tmp/*.yang || cp $(YANG_PATH) tmp
-	docker build -f Dockerfile.yang -t $(IMAGE_PATH)notconf:$(YANG_TAG) .
+	@ls $(COMPOSE_PATH)/*.yang > /dev/null 2>&1 || echo "Copying files directly from $(YANG_PATH) without fixups"; find $(YANG_PATH) -maxdepth 1 -type f -exec cp -t $(COMPOSE_PATH) {} +
+	docker build -f Dockerfile.yang -t $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG) --build-arg COMPOSE_PATH=$(COMPOSE_PATH) $(DOCKER_BUILD_CACHE_ARG) .
 
-test-yang: YANG_TAG=foo
+test-build-yang: export YANG_PATH=test
+test-build-yang: build-yang
+	$(MAKE) test-yang
+
+test-yang: CNT_PREFIX=test-yang-$(COMPOSE_IMAGE_NAME)-$(COMPOSE_IMAGE_TAG)
 test-yang:
-	-docker rm -f test-yang-$(PNS)
-	docker run -d --name test-yang-$(PNS) $(IMAGE_PATH)notconf:$(YANG_TAG)
+	-docker rm -f $(CNT_PREFIX)-$(PNS)
+	docker run -d --name $(CNT_PREFIX)-$(PNS) $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG)
+	$(MAKE) wait-healthy
+	netconf-console2 --host $$(docker inspect $(CNT_PREFIX)-$(PNS) --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}') --port 830 --hello | grep nc:capability
+	docker rm -f $(CNT_PREFIX)-$(PNS)
