@@ -1,5 +1,7 @@
 name: package-cleaner
 
+on: push
+
 jobs:
   clean-package:
     steps:
