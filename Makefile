@@ -65,7 +65,9 @@ push:
 
 test:
 	$(MAKE) test-notconf-mount
-	$(MAKE) test-compose-yang
+	$(MAKE) test-compose-yang YANG_PATH=test
+	$(MAKE) test-compose-yang YANG_PATH=yang/vendor/nokia/7x50_YangModels/latest_sros_21.10
+	$(MAKE) test-compose-yang YANG_PATH=yang/vendor/juniper/21.1/21.1R1/junos
 
 # test-notconf-mount: start a notconf:latest container with the test YANG
 # modules mounted to /yang-modules in the container. All YANG modules and XML
@@ -166,10 +168,13 @@ compose-notconf-yang:
 			make -f fixups/$$fixup -j YANG_PATH=$(YANG_PATH) COMPOSE_PATH=$(COMPOSE_PATH); \
 		fi \
 	done
-	@ls $(COMPOSE_PATH)/*.yang > /dev/null 2>&1 || echo "Copying files directly from $(YANG_PATH) without fixups"; find $(YANG_PATH) -maxdepth 1 -type f -exec cp -t $(COMPOSE_PATH) {} +
+	if ! ls $(COMPOSE_PATH)/*.yang > /dev/null 2>&1; then \
+		echo "Copying files directly from $(YANG_PATH) without fixups"; \
+		find $(YANG_PATH) -maxdepth 1 -type f -exec cp -t $(COMPOSE_PATH) {} +; \
+	fi
 	docker build -f Dockerfile.yang -t $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG) --build-arg COMPOSE_PATH=$(COMPOSE_PATH) $(DOCKER_BUILD_CACHE_ARG) .
 
-test-compose-yang: export YANG_PATH=test
+test-compose-yang: export YANG_PATH=$(YANG_PATH)
 test-compose-yang: compose-notconf-yang
 	$(MAKE) test-composed-notconf-yang
 
