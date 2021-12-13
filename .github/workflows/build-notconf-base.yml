@@ -30,6 +30,15 @@ jobs:
         pip3 install netconf-console2 pyang
         sudo apt-get install -qy xmlstarlet
 
+    - name: Cache yangmodels
+      uses: actions/cache@v2
+      with:
+        path: yang
+        key: yang-${{ hashFiles('Makefile') }}
+
+    - name: Update yangmodels
+      run: make clone-yangmodels
+
     - name: Run tests
       run: make test
 
