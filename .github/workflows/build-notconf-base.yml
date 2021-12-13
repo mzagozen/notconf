@@ -26,7 +26,9 @@ jobs:
       run: make build
 
     - name: Install test prerequisites
-      run: pip3 install netconf-console2
+      run: |
+        pip3 install netconf-console2 pyang
+        sudo apt-get install -qy xmlstarlet
 
     - name: Run tests
       run: make test
