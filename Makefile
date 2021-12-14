@@ -25,7 +25,7 @@ DOCKER_TAG?=$(PNS)
 
 export DOCKER_BUILDKIT=1
 
-.PHONY: clone-deps build test tag-release push-release push test
+.PHONY: clone-deps build test tag-release push-release push test push-composed-notconf
 
 clone-or-update: BRANCH?=devel
 clone-or-update: DIR:=$(basename $(lastword $(subst /, ,$(REPOSITORY))))
@@ -63,9 +63,16 @@ push:
 	docker push $(IMAGE_PATH)notconf:$(DOCKER_TAG)
 	docker push $(IMAGE_PATH)notconf:$(DOCKER_TAG)-debug
 
+tag-release-composed-notconf: composed-notconf.txt
+	for tag in $$(uniq $<); do release_tag=$$(echo $${tag} | sed 's/-$(PNS)$$//'); docker tag $${tag} $${release_tag}; done
+
+push-release-composed-notconf: composed-notconf.txt
+	for release_tag in $$(sed 's/-$(PNS)$$//g' $< | uniq); do docker push $${release_tag}; done
+
 test:
 	$(MAKE) test-notconf-mount
 	$(MAKE) clone-yangmodels
+	> composed-notconf.txt
 	$(MAKE) test-compose-yang YANG_PATH=test
 	$(MAKE) test-compose-yang YANG_PATH=yang/vendor/nokia/7x50_YangModels/latest_sros_21.10
 	$(MAKE) test-compose-yang YANG_PATH=yang/vendor/juniper/21.1/21.1R1/junos
@@ -178,7 +185,8 @@ compose-notconf-yang:
 		echo "Copying files directly from $(YANG_PATH) without fixups"; \
 		find $(YANG_PATH) -maxdepth 1 -type f -exec cp -t $(COMPOSE_PATH) {} +; \
 	fi
-	docker build -f Dockerfile.yang -t $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG) --build-arg COMPOSE_PATH=$(COMPOSE_PATH) --build-arg DOCKER_TAG=$(DOCKER_TAG) $(DOCKER_BUILD_CACHE_ARG) .
+	docker build -f Dockerfile.yang -t $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG)-$(PNS) --build-arg COMPOSE_PATH=$(COMPOSE_PATH) --build-arg IMAGE_PATH=$(IMAGE_PATH) --build-arg DOCKER_TAG=$(DOCKER_TAG) $(DOCKER_BUILD_CACHE_ARG) .
+	echo $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG)-$(PNS) >> composed-notconf.txt
 
 test-compose-yang: export YANG_PATH=$(YANG_PATH)
 test-compose-yang: compose-notconf-yang
@@ -187,7 +195,7 @@ test-compose-yang: compose-notconf-yang
 test-composed-notconf-yang: CNT_PREFIX=test-yang-$(COMPOSE_IMAGE_NAME)-$(COMPOSE_IMAGE_TAG)-$(PNS)
 test-composed-notconf-yang:
 	-docker rm -f $(CNT_PREFIX)
-	docker run -d --name $(CNT_PREFIX) $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG)
+	docker run -d --name $(CNT_PREFIX) $(IMAGE_PATH)notconf-$(COMPOSE_IMAGE_NAME):$(COMPOSE_IMAGE_TAG)-$(PNS)
 	$(MAKE) wait-healthy
 	netconf-console2 --host $$(docker inspect $(CNT_PREFIX) --format='{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}') --port 830 --hello | grep nc:capability
 	make test-stop

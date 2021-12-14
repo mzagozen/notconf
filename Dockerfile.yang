@@ -1,11 +1,12 @@
+ARG IMAGE_PATH
 ARG DOCKER_TAG=latest
 
-FROM notconf:${DOCKER_TAG} AS notconf-install
+FROM ${IMAGE_PATH}notconf:${DOCKER_TAG} AS notconf-install
 ARG COMPOSE_PATH
 
 COPY ${COMPOSE_PATH} /notconf
 
 RUN YANG_MODULES_DIR=/notconf /install-yang-modules.sh
 
-FROM notconf:${DOCKER_TAG} AS notconf
+FROM ${IMAGE_PATH}notconf:${DOCKER_TAG} AS notconf
 COPY --from=notconf-install /etc/sysrepo /etc/sysrepo
